@@ -10,7 +10,7 @@ def dist(p1, p2):
 
 
 class PointsSelectionHandler:
-    def __init__(self, names, plotter, selection_completion_callback):
+    def __init__(self, names, plotter, selection_completion_callback, visualize_clicks=True):
         assert names
         self.i = iter(names)
         self.cur_label = next(self.i)
@@ -18,6 +18,7 @@ class PointsSelectionHandler:
         self.points_dict = dict()
         self.attach_callback(plotter, selection_completion_callback)
         self.plotter = plotter
+        self.visualize_clicks = visualize_clicks
 
     def attach_callback(self, plotter, selection_completion_callback):
         plotter.add_text(self.cur_label, name=self.label_actor_name)
@@ -38,7 +39,8 @@ class PointsSelectionHandler:
 
     def process_current_point(self, point):
         self.points_dict[self.cur_label] = point
-        visualize_points(self.plotter, (point,))
+        if self.visualize_clicks:
+            visualize_points(self.plotter, (point,))
 
     def clean_up_plotter(self, plotter):
         plotter.untrack_click_position()
@@ -59,7 +61,8 @@ def get_slice_width(slice):
     x = [p[0] for p in points]
     y = [p[1] for p in points]
     z = [p[2] for p in points]
-    center = (sum(x) / len(points), sum(y) / len(points), sum(z) / len(points))
+    points_len = len(points)
+    center = (sum(x) / points_len, sum(y) / points_len, sum(z) / points_len)
     dists_to_center = (dist(p, center) for p in points)
     width = max(dists_to_center) * 2
     return width
@@ -77,10 +80,20 @@ def process_slice(plotter, slice, displayed_info):
     print_morf_info(displayed_info, slice_width)
 
 
-class PointProcessor:
+class MeshProcessor:
     def __init__(self, mesh, plotter):
         self.mesh = mesh
         self.plotter = plotter
+
+    def align_to_y_and_continue(self, selected_points):
+        """After call medial side of the bone will be placed towards y axis"""
+        points = [np.asarray(v) for v in selected_points.values()]
+        align_to_yz_plane(self.mesh, points)
+        visualize_points(self.plotter, get_bone_ends(self.mesh), color=config.ends_colors)
+        add_yz_plane(self.plotter, self.mesh)
+
+        processor = MeshProcessor(self.mesh, self.plotter)
+        PointsSelectionHandler(config.points_of_interest_names, self.plotter, processor.process)
 
     def process(self, selected_points):
         print("Морфометрические параметры:")
@@ -139,7 +152,7 @@ def linear_size(mesh):
 
 def point_furthest_from_center(mesh):
     center = mesh.center
-    return max(mesh.points, key=lambda p: np.linalg.norm(center-p))
+    return max(mesh.points, key=lambda p: dist(center, p))
 
 
 def bone_axis_points(mesh):
@@ -150,13 +163,28 @@ def bone_axis_points(mesh):
     return first_end, second_end
 
 
+def angle_between_vecs(v1, v2):
+    return np.degrees(np.arccos(np.dot(v1, v2) / np.linalg.norm(v1) / np.linalg.norm(v2)))
+
+
+def align_to_yz_plane(mesh, points_to_align):
+    p1 = points_to_align[0]
+    p2 = np.copy(points_to_align[1])
+    p2[2] = p1[2]
+    align_mesh(mesh, (p1, p2), (0, 1, 0))
+
+
+def align_mesh(mesh, points_to_align, unit_vec):
+    dir = points_to_align[0]-points_to_align[1]
+    angle = angle_between_vecs(dir, unit_vec)
+    rotation_axis = np.cross(dir, unit_vec)
+    mesh.rotate_vector(rotation_axis, angle, inplace=True)
+
+
 def align_to_z_axis(mesh):
     ends = bone_axis_points(mesh)
-    ends_dir = ends[0]-ends[1]
     unit_z = (0, 0, 1)
-    angle = np.degrees(np.arccos(np.dot(ends_dir, unit_z) / np.linalg.norm(ends_dir)))
-    rotation_axis = np.cross(ends_dir, unit_z)
-    mesh.rotate_vector(rotation_axis, angle, inplace=True)
+    align_mesh(mesh, ends, unit_z)
 
 
 def bone_slice(bone_mesh, bone_end_idx):
@@ -189,14 +217,23 @@ def visualize_slice(plotter, slice):
     plotter.add_mesh(slice, color="red")
 
 
+def add_yz_plane(plotter, mesh):
+    plane = pv.Plane(direction=(1, 0, 0), i_size=linear_size(mesh)[2], j_size=linear_size(mesh)[1])
+    plotter.add_mesh(plane, color="green", opacity=0.2)
+
+
 def set_up_and_run_plotter(mesh):
     plotter = pv.Plotter()
+    align_medial_side_to_y(plotter, mesh)
     plotter.add_axes()
     plotter.add_mesh(mesh)
-    processor = PointProcessor(mesh, plotter)
-    PointsSelectionHandler(config.points_of_interest_names, plotter, processor.process)
-    visualize_points(plotter, get_bone_ends(mesh), color=config.ends_colors)
     plotter.show()
+
+
+def align_medial_side_to_y(plotter, mesh):
+    processor = MeshProcessor(mesh, plotter)
+    points_names = ("medial point", "lateral point")
+    PointsSelectionHandler(points_names, plotter, processor.align_to_y_and_continue, visualize_clicks=False)
 
 
 def import_mesh():
