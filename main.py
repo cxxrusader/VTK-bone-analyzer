@@ -56,7 +56,7 @@ def get_styloid_and_head_points(bone_ends, head_pit):
     return (end1, end2) if dist(end1, head_pit) > dist(end2, head_pit) else (end2, end1)
 
 
-def get_slice_width(slice):
+def get_slice_max_d(slice):
     points = slice.points
     x = [p[0] for p in points]
     y = [p[1] for p in points]
@@ -74,10 +74,47 @@ def get_bone_ends(mesh):
     return first_end, second_end
 
 
-def process_slice(plotter, slice, displayed_info):
+def get_width_along_axis(slice, axis_id):
+    coord = slice.points[:, axis_id]
+    min_c = min(coord)
+    max_c = max(coord)
+    return max_c - min_c
+
+def get_slice_width(slice):
+    return get_width_along_axis(slice, 1)
+
+
+def get_slice_sag_width(slice):
+    return get_width_along_axis(slice, 0)
+
+
+def show_slice_and_print_width(plotter, slice, displayed_info):
     visualize_slice(plotter, slice)
     slice_width = get_slice_width(slice)
     print_morf_info(displayed_info, slice_width)
+
+
+def show_slice_and_print_d(plotter, slice, displayed_info):
+    visualize_slice(plotter, slice)
+    slice_d = get_slice_max_d(slice)
+    print_morf_info(displayed_info, slice_d)
+
+
+def print_slice_sag_width(slice, displayed_info):
+    slice_sag_width = get_slice_sag_width(slice)
+    print_morf_info(displayed_info, slice_sag_width)
+
+
+def print_slice_d(slice, displayed_info):
+    slice_d = get_slice_max_d(slice)
+    print_morf_info(displayed_info, slice_d)
+
+
+def dist_to_line(point, line):
+    p3 = point
+    p1, p2 = line
+    dist = np.linalg.norm(np.cross(p2-p1, p1-p3)) / np.linalg.norm(p2-p1)
+    return dist
 
 
 class MeshProcessor:
@@ -114,21 +151,45 @@ class MeshProcessor:
 
         point_on_diaphysis = selected_points[config.diaphysis_point_name]
         diaphysis_slice = self.mesh.slice(origin=point_on_diaphysis, normal="z")
-        process_slice(self.plotter, diaphysis_slice, "Ширина диафиза")
+        show_slice_and_print_width(self.plotter, diaphysis_slice, "Ширина диафиза")
 
         middle_slice = self.mesh.slice(normal="z")
-        process_slice(self.plotter, middle_slice, "Ширина середины диафиза")
+        show_slice_and_print_width(self.plotter, middle_slice, "Ширина середины диафиза")
 
         opposite_head_point = selected_points[config.opposite_point_on_head]
         print_morf_info("Ширина головки", dist(opposite_head_point, head))
 
         neck_point = selected_points[config.neck_point_name]
         neck_slice = self.mesh.slice(origin=neck_point, normal="z")
-        process_slice(self.plotter, neck_slice, "Ширина шейки")
+        show_slice_and_print_width(self.plotter, neck_slice, "Ширина шейки")
 
         distal_point = selected_points[config.distal_point_name]
         distal_slice = self.mesh.slice(origin=distal_point, normal="z")
-        process_slice(self.plotter, distal_slice, "Ширина дистального эпифиза")
+        show_slice_and_print_width(self.plotter, distal_slice, "Ширина дистального эпифиза")
+
+        print_slice_sag_width(diaphysis_slice, "Сагиттальный диаметр диафиза")
+        print_slice_sag_width(neck_slice, "Сагиттальный диаметр шейки")
+
+        thinnest_point = selected_points[config.thinnest_point_name]
+        thinnest_slice = self.mesh.slice(origin=thinnest_point, normal="z")
+        show_slice_and_print_d(self.plotter, thinnest_slice, "Наименьшая окружность диафиза")
+
+        print_slice_d(middle_slice, "Окружность середины диафиза")
+        print_slice_d(neck_slice, "Окружность шейки")
+
+        tub_highest_point = selected_points[config.tuberosity_highest_point_name]
+        tub_lowest_point = selected_points[config.tuberosity_lowest_point_name]
+        print_morf_info("Длина бугристости", dist(tub_lowest_point, tub_highest_point))
+
+        tub_lat_point = selected_points[config.tuberosity_lateral_point_name]
+        tub_med_point = selected_points[config.tuberosity_medial_point_name]
+        print_morf_info("Ширина бугристости", dist(tub_lat_point, tub_med_point))
+
+        tub_slice = self.mesh.slice(origin=center_of_tuberosity, normal="z")
+        print_slice_sag_width(tub_slice, "Сагиттальный диаметр проксимального отдела в области бугристости")
+
+        pit_depth = dist_to_line(upper_pit, (head, opposite_head_point))
+        print_morf_info("Глубина суставной ямки", pit_depth)
 
 
 def find_second_end(aligned_mesh, first_end):

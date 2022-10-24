@@ -11,6 +11,11 @@ diaphysis_point_name = "point on the most developed part of medial border"
 opposite_point_on_head = f"point opposite to {ends_colors} point on the head"
 neck_point_name = "point on the neck"
 distal_point_name = "point on the distal"
+thinnest_point_name = "point on the thinnest part of diaphysis"
+tuberosity_highest_point_name = "highest point of the tuberosity"
+tuberosity_lowest_point_name = "lowest point of the tuberosity"
+tuberosity_lateral_point_name = "most lateral point of the tuberosity"
+tuberosity_medial_point_name = "most medial point of the tuberosity"
 
 points_of_interest_names = (
     upper_pit_point_name,
@@ -20,5 +25,10 @@ points_of_interest_names = (
     diaphysis_point_name,
     opposite_point_on_head,
     neck_point_name,
-    distal_point_name
+    distal_point_name,
+    thinnest_point_name,
+    tuberosity_highest_point_name,
+    tuberosity_lowest_point_name,
+    tuberosity_lateral_point_name,
+    tuberosity_medial_point_name
 )
