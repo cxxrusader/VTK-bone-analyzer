@@ -47,8 +47,12 @@ class PointsSelectionHandler:
         plotter.remove_actor(self.label_actor_name)
 
 
+def rounded_string(number):
+    return "{:.1f}".format(number)
+
+
 def print_morf_info(param_name, val):
-    print("{}: {:.1f} мм".format(param_name, val))
+    print("{}: ".format(param_name) + rounded_string(val) + " мм")
 
 
 def get_styloid_and_head_points(bone_ends, head_pit):
@@ -80,6 +84,7 @@ def get_width_along_axis(slice, axis_id):
     max_c = max(coord)
     return max_c - min_c
 
+
 def get_slice_width(slice):
     return get_width_along_axis(slice, 1)
 
@@ -94,10 +99,18 @@ def show_slice_and_print_width(plotter, slice, displayed_info):
     print_morf_info(displayed_info, slice_width)
 
 
-def show_slice_and_print_d(plotter, slice, displayed_info):
+def circumference(r):
+    return 2 * np.pi * r
+
+
+def get_slice_circumference(slice):
+    return circumference(get_slice_max_d(slice)/2)
+
+
+def show_slice_and_print_circumference(plotter, slice, displayed_info):
     visualize_slice(plotter, slice)
-    slice_d = get_slice_max_d(slice)
-    print_morf_info(displayed_info, slice_d)
+    slice_circumference = get_slice_circumference(slice)
+    print_morf_info(displayed_info, slice_circumference)
 
 
 def print_slice_sag_width(slice, displayed_info):
@@ -105,9 +118,9 @@ def print_slice_sag_width(slice, displayed_info):
     print_morf_info(displayed_info, slice_sag_width)
 
 
-def print_slice_d(slice, displayed_info):
-    slice_d = get_slice_max_d(slice)
-    print_morf_info(displayed_info, slice_d)
+def print_slice_circumference(slice, displayed_info):
+    slice_circumference = get_slice_circumference(slice)
+    print_morf_info(displayed_info, slice_circumference)
 
 
 def dist_to_line(point, line):
@@ -117,8 +130,46 @@ def dist_to_line(point, line):
     return dist
 
 
+def slice_through_points(mesh, p1, p2, p3):
+    p1 = np.asarray(p1)
+    p2 = np.asarray(p2)
+    p3 = np.asarray(p3)
+    n = np.cross(p1-p2, p1-p3)
+    slice = mesh.slice(origin=p1, normal=n)
+    return slice
+
+
+def find_tub_diam_points_of_slice(slice, head_center, tub_center, height_function):
+    potential_diam_points = list(filter(lambda p: height_function(p) > height_function(tub_center), slice.points))
+    medial_points = filter(lambda p: p[1] > head_center[1], potential_diam_points)
+    highest_med = max(medial_points, key=height_function)
+    lateral_points = filter(lambda p: p[1] < head_center[1], potential_diam_points)
+    most_distant_lat = max(lateral_points, key=lambda p: dist(p, tub_center))
+    return highest_med, most_distant_lat
+
+
+def get_head_slice(mesh, head_center):
+    head_normal = np.asarray(head_center) - np.asarray(mesh.center)
+    head_normal /= np.linalg.norm(head_normal)
+    slice_offset = 1.5
+    head_slice = mesh.slice(origin=head_center - head_normal * slice_offset, normal=head_normal)
+    return head_slice
+
+
+def find_nontub_diam_points_of_slice(head_slice, head_center, tub_diams):
+    td1 = np.asarray(tub_diams[0])
+    td2 = np.asarray(tub_diams[1])
+    nontub_slice = head_slice.slice(origin=head_center, normal=td1-td2)
+    p1 = np.copy(max(nontub_slice.points, key=lambda p: p[0] > head_center[0]))
+    p1[2] = head_center[2]
+    p2 = np.copy(max(nontub_slice.points, key=lambda p: p[0] < head_center[0]))
+    p2[2] = head_center[2]
+    return p1, p2
+
+
 class MeshProcessor:
-    def __init__(self, mesh, plotter):
+    def __init__(self, mesh, plotter, head_upper_points=None):
+        self.head_upper_points = head_upper_points
         self.mesh = mesh
         self.plotter = plotter
 
@@ -157,7 +208,8 @@ class MeshProcessor:
         show_slice_and_print_width(self.plotter, middle_slice, "Ширина середины диафиза")
 
         opposite_head_point = selected_points[config.opposite_point_on_head]
-        print_morf_info("Ширина головки", dist(opposite_head_point, head))
+        head_width = dist(opposite_head_point, head)
+        print_morf_info("Ширина головки", head_width)
 
         neck_point = selected_points[config.neck_point_name]
         neck_slice = self.mesh.slice(origin=neck_point, normal="z")
@@ -172,10 +224,10 @@ class MeshProcessor:
 
         thinnest_point = selected_points[config.thinnest_point_name]
         thinnest_slice = self.mesh.slice(origin=thinnest_point, normal="z")
-        show_slice_and_print_d(self.plotter, thinnest_slice, "Наименьшая окружность диафиза")
+        show_slice_and_print_circumference(self.plotter, thinnest_slice, "Наименьшая окружность диафиза")
 
-        print_slice_d(middle_slice, "Окружность середины диафиза")
-        print_slice_d(neck_slice, "Окружность шейки")
+        print_slice_circumference(middle_slice, "Окружность середины диафиза")
+        print_slice_circumference(neck_slice, "Окружность шейки")
 
         tub_highest_point = selected_points[config.tuberosity_highest_point_name]
         tub_lowest_point = selected_points[config.tuberosity_lowest_point_name]
@@ -190,6 +242,63 @@ class MeshProcessor:
 
         pit_depth = dist_to_line(upper_pit, (head, opposite_head_point))
         print_morf_info("Глубина суставной ямки", pit_depth)
+
+        head_circumference = circumference(head_width/2)
+        print_morf_info("Окружность головки", head_circumference)
+
+        head_tub_slice = slice_through_points(self.mesh, center_of_tuberosity, upper_pit, tub_lowest_point)
+
+        def get_point_height(p):
+            return p[2] if head[2] > 0 else -p[2]
+
+        tub_diam_points = find_tub_diam_points_of_slice(head_tub_slice, upper_pit, center_of_tuberosity,
+                                                        get_point_height)
+        visualize_points(self.plotter, tub_diam_points, color="green")
+        visualize_slice(self.plotter, head_tub_slice, color="green")
+        print_morf_info("Диаметр головки, направленный к бугристости", dist(tub_diam_points[0], tub_diam_points[1]))
+
+        head_slice = get_head_slice(self.mesh, upper_pit)
+        visualize_slice(self.plotter, head_slice, color="green")
+        nontub_diam_points = find_nontub_diam_points_of_slice(head_slice, upper_pit, tub_diam_points)
+        visualize_points(self.plotter, nontub_diam_points, color="green")
+        print_morf_info("Диаметр головки, не напрвленный к бугристости",
+                        dist(nontub_diam_points[0], nontub_diam_points[1]))
+
+        processor = MeshProcessor(self.mesh, self.plotter, tub_diam_points + nontub_diam_points)
+        head_lower_points_names = [
+            config.lower_head_point_1,
+            config.lower_head_point_2,
+            config.lower_head_point_3,
+            config.lower_head_point_4
+        ]
+        PointsSelectionHandler(head_lower_points_names, self.plotter, processor.select_head_points)
+
+    def select_head_points(self, selected_points):
+        head_lower_edge_points = [
+            selected_points[config.lower_head_point_1],
+            selected_points[config.lower_head_point_2],
+            selected_points[config.lower_head_point_3],
+            selected_points[config.lower_head_point_4]
+        ]
+        head_heights = find_head_heights(self.head_upper_points, head_lower_edge_points)
+        print("Высота головки (в четырех точках):", join_with_slash(head_heights))
+
+
+def join_with_slash(values):
+    return "/".join(map(rounded_string, values)) + " мм"
+
+
+def find_corresponding_height(upper_point, lower_points):
+    distances = map(lambda p: dist(p, upper_point), lower_points)
+    return min(distances)
+
+
+def find_head_heights(upper_points, lower_points):
+    heights = []
+    for upper_point in upper_points:
+        height = find_corresponding_height(upper_point, lower_points)
+        heights.append(height)
+    return heights
 
 
 def find_second_end(aligned_mesh, first_end):
@@ -274,8 +383,8 @@ def visualize_points(plotter, points, color="blue"):
         plotter.add_mesh(pv.Sphere(3, point), color=color)
 
 
-def visualize_slice(plotter, slice):
-    plotter.add_mesh(slice, color="red")
+def visualize_slice(plotter, slice, color="red"):
+    plotter.add_mesh(slice, color=color)
 
 
 def add_yz_plane(plotter, mesh):

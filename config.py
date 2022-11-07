@@ -1,4 +1,4 @@
-path_to_file = "radial_bone_mesh.vtk"
+path_to_file = "3outof12.vtk"
 slice_to_bone_ratio = 1/3
 
 ends_colors = "yellow"
@@ -16,6 +16,10 @@ tuberosity_highest_point_name = "highest point of the tuberosity"
 tuberosity_lowest_point_name = "lowest point of the tuberosity"
 tuberosity_lateral_point_name = "most lateral point of the tuberosity"
 tuberosity_medial_point_name = "most medial point of the tuberosity"
+lower_head_point_1 = "lower edge of the head 1"
+lower_head_point_2 = "lower edge of the head 2"
+lower_head_point_3 = "lower edge of the head 3"
+lower_head_point_4 = "lower edge of the head 4"
 
 points_of_interest_names = (
     upper_pit_point_name,
