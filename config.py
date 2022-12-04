@@ -1,5 +1,7 @@
 path_to_file = "3outof12.vtk"
 slice_to_bone_ratio = 1/3
+path_to_true_params = "true_params.pkl"
+path_to_programmatically_measured_params = "prog_params.pkl"
 
 ends_colors = "yellow"
 

@@ -1,6 +1,8 @@
 import pyvista as pv
 import numpy as np
+import pickle
 
+import params_names
 import config
 from config import path_to_file, slice_to_bone_ratio, points_of_interest_names
 
@@ -93,34 +95,12 @@ def get_slice_sag_width(slice):
     return get_width_along_axis(slice, 0)
 
 
-def show_slice_and_print_width(plotter, slice, displayed_info):
-    visualize_slice(plotter, slice)
-    slice_width = get_slice_width(slice)
-    print_morf_info(displayed_info, slice_width)
-
-
 def circumference(r):
     return 2 * np.pi * r
 
 
 def get_slice_circumference(slice):
     return circumference(get_slice_max_d(slice)/2)
-
-
-def show_slice_and_print_circumference(plotter, slice, displayed_info):
-    visualize_slice(plotter, slice)
-    slice_circumference = get_slice_circumference(slice)
-    print_morf_info(displayed_info, slice_circumference)
-
-
-def print_slice_sag_width(slice, displayed_info):
-    slice_sag_width = get_slice_sag_width(slice)
-    print_morf_info(displayed_info, slice_sag_width)
-
-
-def print_slice_circumference(slice, displayed_info):
-    slice_circumference = get_slice_circumference(slice)
-    print_morf_info(displayed_info, slice_circumference)
 
 
 def dist_to_line(point, line):
@@ -167,11 +147,32 @@ def find_nontub_diam_points_of_slice(head_slice, head_center, tub_diams):
     return p1, p2
 
 
+def save_params(params_dict):
+    with open(config.path_to_programmatically_measured_params, "wb") as f:
+        pickle.dump(params_dict, f)
+
+
+def request_params_saving(params_dict):
+    print("Желаете сохранить измеренные параметры? (ДА/нет)")
+    print(">", end="")
+    answer = input().lower()
+    while True:
+        if answer in ["н", "нет"]:
+            return
+        if answer in ["д", "да", ""]:
+            save_params(params_dict)
+            print("Параметры будут сохранены после закрытия программы")
+            return
+        print("Недопустимый ввод. Попробуйте еще раз:")
+        answer = input().lower()
+
+
 class MeshProcessor:
     def __init__(self, mesh, plotter, head_upper_points=None):
         self.head_upper_points = head_upper_points
         self.mesh = mesh
         self.plotter = plotter
+        self.params_dict = dict()
 
     def align_to_y_and_continue(self, selected_points):
         """After call medial side of the bone will be placed towards y axis"""
@@ -183,68 +184,112 @@ class MeshProcessor:
         processor = MeshProcessor(self.mesh, self.plotter)
         PointsSelectionHandler(config.points_of_interest_names, self.plotter, processor.process)
 
+    def show_slice_and_print_width(self, plotter, slice, displayed_info, dict_slice_name):
+        visualize_slice(plotter, slice)
+        slice_width = get_slice_width(slice)
+        self.params_dict[dict_slice_name] = slice_width
+        print_morf_info(displayed_info, slice_width)
+
+    def print_and_save_slice_sag_width(self, slice, displayed_info, dict_slice_name):
+        slice_sag_width = get_slice_sag_width(slice)
+        self.params_dict[dict_slice_name] = slice_sag_width
+        print_morf_info(displayed_info, slice_sag_width)
+
+    def show_slice_and_print_circumference(self, plotter, slice, displayed_info, dict_slice_name):
+        visualize_slice(plotter, slice)
+        slice_circumference = get_slice_circumference(slice)
+        self.params_dict[dict_slice_name] = slice_circumference
+        print_morf_info(displayed_info, slice_circumference)
+
+    def print_and_save_slice_circumference(self, slice, displayed_info, dict_slice_name):
+        slice_circumference = get_slice_circumference(slice)
+        self.params_dict[dict_slice_name] = slice_circumference
+        print_morf_info(displayed_info, slice_circumference)
+
     def process(self, selected_points):
         print("Морфометрические параметры:")
 
         first_end, second_end = get_bone_ends(self.mesh)
-        print_morf_info("Наибольшая длина", dist(first_end, second_end))
+        max_length = dist(first_end, second_end)
+        print_morf_info("Наибольшая длина", max_length)
+        self.params_dict[params_names.biggest_length_of_bone] = max_length
 
         upper_pit = selected_points[config.upper_pit_point_name]
         lower_pit = selected_points[config.lower_pit_point_name]
-        print_morf_info("Физиологическая длина", dist(upper_pit, lower_pit))
+        phys_length = dist(upper_pit, lower_pit)
+        print_morf_info("Физиологическая длина", phys_length)
+        self.params_dict[params_names.phys_length_of_bone] = phys_length
 
         styloid_process, head = get_styloid_and_head_points((first_end, second_end), upper_pit)
         lateral_head_point = selected_points[config.lateral_head_point_name]
-        print_morf_info("Параллельная длина", dist(lateral_head_point, styloid_process))
+        par_length = dist(lateral_head_point, styloid_process)
+        print_morf_info("Параллельная длина", par_length)
+        self.params_dict[params_names.paral_length_of_bone] = par_length
 
         center_of_tuberosity = selected_points[config.center_of_tuberosity_name]
-        print_morf_info("Расстояние от головки до бугристости", dist(center_of_tuberosity, head))
+        head_to_tub_dist = dist(center_of_tuberosity, head)
+        print_morf_info("Расстояние от головки до бугристости", head_to_tub_dist)
+        self.params_dict[params_names.dist_from_head_to_tub] = head_to_tub_dist
 
         point_on_diaphysis = selected_points[config.diaphysis_point_name]
         diaphysis_slice = self.mesh.slice(origin=point_on_diaphysis, normal="z")
-        show_slice_and_print_width(self.plotter, diaphysis_slice, "Ширина диафиза")
+        self.show_slice_and_print_width(self.plotter, diaphysis_slice, "Ширина диафиза", params_names.diaphisys_width)
 
         middle_slice = self.mesh.slice(normal="z")
-        show_slice_and_print_width(self.plotter, middle_slice, "Ширина середины диафиза")
+        self.show_slice_and_print_width(self.plotter, middle_slice, "Ширина середины диафиза",
+                                        params_names.diaphisys_middle_width)
 
         opposite_head_point = selected_points[config.opposite_point_on_head]
         head_width = dist(opposite_head_point, head)
         print_morf_info("Ширина головки", head_width)
+        self.params_dict[params_names.head_width] = head_width
 
         neck_point = selected_points[config.neck_point_name]
         neck_slice = self.mesh.slice(origin=neck_point, normal="z")
-        show_slice_and_print_width(self.plotter, neck_slice, "Ширина шейки")
+        self.show_slice_and_print_width(self.plotter, neck_slice, "Ширина шейки", params_names.neck_width)
 
         distal_point = selected_points[config.distal_point_name]
         distal_slice = self.mesh.slice(origin=distal_point, normal="z")
-        show_slice_and_print_width(self.plotter, distal_slice, "Ширина дистального эпифиза")
+        self.show_slice_and_print_width(self.plotter, distal_slice, "Ширина дистального эпифиза",
+                                        params_names.lower_epiphysis_width)
 
-        print_slice_sag_width(diaphysis_slice, "Сагиттальный диаметр диафиза")
-        print_slice_sag_width(neck_slice, "Сагиттальный диаметр шейки")
+        self.print_and_save_slice_sag_width(diaphysis_slice, "Сагиттальный диаметр диафиза",
+                                            params_names.diaphysis_sag_diam)
+        self.print_and_save_slice_sag_width(neck_slice, "Сагиттальный диаметр шейки", params_names.neck_sag_diam)
 
         thinnest_point = selected_points[config.thinnest_point_name]
         thinnest_slice = self.mesh.slice(origin=thinnest_point, normal="z")
-        show_slice_and_print_circumference(self.plotter, thinnest_slice, "Наименьшая окружность диафиза")
+        self.show_slice_and_print_circumference(self.plotter, thinnest_slice, "Наименьшая окружность диафиза",
+                                                params_names.diaphysis_smallest_circ)
 
-        print_slice_circumference(middle_slice, "Окружность середины диафиза")
-        print_slice_circumference(neck_slice, "Окружность шейки")
+        self.print_and_save_slice_circumference(middle_slice, "Окружность середины диафиза",
+                                                params_names.diaphysis_mid_circ)
+        self.print_and_save_slice_circumference(neck_slice, "Окружность шейки", params_names.neck_circ)
 
         tub_highest_point = selected_points[config.tuberosity_highest_point_name]
         tub_lowest_point = selected_points[config.tuberosity_lowest_point_name]
-        print_morf_info("Длина бугристости", dist(tub_lowest_point, tub_highest_point))
+        tub_length = dist(tub_lowest_point, tub_highest_point)
+        print_morf_info("Длина бугристости", tub_length)
+        self.params_dict[params_names.tub_length] = tub_length
 
         tub_lat_point = selected_points[config.tuberosity_lateral_point_name]
         tub_med_point = selected_points[config.tuberosity_medial_point_name]
-        print_morf_info("Ширина бугристости", dist(tub_lat_point, tub_med_point))
+        tub_width = dist(tub_lat_point, tub_med_point)
+        print_morf_info("Ширина бугристости", tub_width)
+        self.params_dict[params_names.tub_width] = tub_width
 
         tub_slice = self.mesh.slice(origin=center_of_tuberosity, normal="z")
-        print_slice_sag_width(tub_slice, "Сагиттальный диаметр проксимального отдела в области бугристости")
+        self.print_and_save_slice_sag_width(tub_slice,
+                                            "Сагиттальный диаметр проксимального отдела в области бугристости",
+                                            params_names.sag_prox_diam_near_tub)
 
         pit_depth = dist_to_line(upper_pit, (head, opposite_head_point))
         print_morf_info("Глубина суставной ямки", pit_depth)
+        self.params_dict[params_names.head_depth] = pit_depth
 
         head_circumference = circumference(head_width/2)
         print_morf_info("Окружность головки", head_circumference)
+        self.params_dict[params_names.head_circ] = head_circumference
 
         head_tub_slice = slice_through_points(self.mesh, center_of_tuberosity, upper_pit, tub_lowest_point)
 
@@ -255,16 +300,20 @@ class MeshProcessor:
                                                         get_point_height)
         visualize_points(self.plotter, tub_diam_points, color="green")
         visualize_slice(self.plotter, head_tub_slice, color="green")
-        print_morf_info("Диаметр головки, направленный к бугристости", dist(tub_diam_points[0], tub_diam_points[1]))
+        head_diam_no_1 = dist(tub_diam_points[0], tub_diam_points[1])
+        print_morf_info("Диаметр головки, направленный к бугристости", head_diam_no_1)
 
         head_slice = get_head_slice(self.mesh, upper_pit)
         visualize_slice(self.plotter, head_slice, color="green")
         nontub_diam_points = find_nontub_diam_points_of_slice(head_slice, upper_pit, tub_diam_points)
         visualize_points(self.plotter, nontub_diam_points, color="green")
+        head_diam_no_2 = dist(nontub_diam_points[0], nontub_diam_points[1])
         print_morf_info("Диаметр головки, не напрвленный к бугристости",
-                        dist(nontub_diam_points[0], nontub_diam_points[1]))
+                        head_diam_no_2)
+        self.params_dict[params_names.head_size_in_two_dirs] = [head_diam_no_1, head_diam_no_2]
 
         processor = MeshProcessor(self.mesh, self.plotter, tub_diam_points + nontub_diam_points)
+        processor.params_dict = self.params_dict
         head_lower_points_names = [
             config.lower_head_point_1,
             config.lower_head_point_2,
@@ -282,6 +331,9 @@ class MeshProcessor:
         ]
         head_heights = find_head_heights(self.head_upper_points, head_lower_edge_points)
         print("Высота головки (в четырех точках):", join_with_slash(head_heights))
+        self.params_dict[params_names.head_heights] = head_heights
+
+        request_params_saving(self.params_dict)
 
 
 def join_with_slash(values):
@@ -295,8 +347,8 @@ def find_corresponding_height(upper_point, lower_points):
 
 def find_head_heights(upper_points, lower_points):
     heights = []
-    for upper_point in upper_points:
-        height = find_corresponding_height(upper_point, lower_points)
+    for lower_point in lower_points:
+        height = find_corresponding_height(lower_point, upper_points)
         heights.append(height)
     return heights
 
@@ -415,15 +467,6 @@ def import_mesh():
 
 def main():
     mesh = import_mesh()
-    print_bone_part_info(mesh, "Целая кость")
-
-    slice1 = bone_slice(mesh, 0)
-    slice2 = bone_slice(mesh, 1)
-
-    print_bone_part_info(slice1, "Конец 1")
-    print_bone_part_info(slice2, "Конец 2")
-
-    # slices = slice1.merge(slice2)
     set_up_and_run_plotter(mesh)
 
 
