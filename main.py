@@ -6,9 +6,11 @@ import params_names
 import config
 from config import path_to_file, slice_to_bone_ratio, points_of_interest_names
 
+import enum
+
 
 def dist(p1, p2):
-    return np.linalg.norm(np.asarray(p1)-np.asarray(p2))
+    return np.linalg.norm(np.asarray(p1) - np.asarray(p2))
 
 
 class PointsSelectionHandler:
@@ -100,13 +102,13 @@ def circumference(r):
 
 
 def get_slice_circumference(slice):
-    return circumference(get_slice_max_d(slice)/2)
+    return circumference(get_slice_max_d(slice) / 2)
 
 
 def dist_to_line(point, line):
     p3 = point
     p1, p2 = line
-    dist = np.linalg.norm(np.cross(p2-p1, p1-p3)) / np.linalg.norm(p2-p1)
+    dist = np.linalg.norm(np.cross(p2 - p1, p1 - p3)) / np.linalg.norm(p2 - p1)
     return dist
 
 
@@ -114,7 +116,7 @@ def slice_through_points(mesh, p1, p2, p3):
     p1 = np.asarray(p1)
     p2 = np.asarray(p2)
     p3 = np.asarray(p3)
-    n = np.cross(p1-p2, p1-p3)
+    n = np.cross(p1 - p2, p1 - p3)
     slice = mesh.slice(origin=p1, normal=n)
     return slice
 
@@ -139,7 +141,7 @@ def get_head_slice(mesh, head_center):
 def find_nontub_diam_points_of_slice(head_slice, head_center, tub_diams):
     td1 = np.asarray(tub_diams[0])
     td2 = np.asarray(tub_diams[1])
-    nontub_slice = head_slice.slice(origin=head_center, normal=td1-td2)
+    nontub_slice = head_slice.slice(origin=head_center, normal=td1 - td2)
     p1 = np.copy(max(nontub_slice.points, key=lambda p: p[0] > head_center[0]))
     p1[2] = head_center[2]
     p2 = np.copy(max(nontub_slice.points, key=lambda p: p[0] < head_center[0]))
@@ -287,7 +289,7 @@ class MeshProcessor:
         print_morf_info("Глубина суставной ямки", pit_depth)
         self.params_dict[params_names.head_depth] = pit_depth
 
-        head_circumference = circumference(head_width/2)
+        head_circumference = circumference(head_width / 2)
         print_morf_info("Окружность головки", head_circumference)
         self.params_dict[params_names.head_circ] = head_circumference
 
@@ -369,7 +371,7 @@ def max_coord(arr, coord_idx):
 
 def linear_size(mesh):
     bounds = mesh.bounds
-    return [bounds[i*2+1] - bounds[i*2] for i in range(3)]
+    return [bounds[i * 2 + 1] - bounds[i * 2] for i in range(3)]
 
 
 def point_furthest_from_center(mesh):
@@ -380,8 +382,8 @@ def point_furthest_from_center(mesh):
 def bone_axis_points(mesh):
     first_end = point_furthest_from_center(mesh)
     bone_middle = mesh.center
-    diff_vec = bone_middle-first_end
-    second_end = bone_middle+diff_vec
+    diff_vec = bone_middle - first_end
+    second_end = bone_middle + diff_vec
     return first_end, second_end
 
 
@@ -397,7 +399,7 @@ def align_to_yz_plane(mesh, points_to_align):
 
 
 def align_mesh(mesh, points_to_align, unit_vec):
-    dir = points_to_align[0]-points_to_align[1]
+    dir = points_to_align[0] - points_to_align[1]
     angle = angle_between_vecs(dir, unit_vec)
     rotation_axis = np.cross(dir, unit_vec)
     mesh.rotate_vector(rotation_axis, angle, inplace=True)
@@ -416,7 +418,7 @@ def bone_slice(bone_mesh, bone_end_idx):
 
     clipping_plane_normal = (0, 0, 1) if bone_end_idx == 0 else (0, 0, -1)
 
-    clipping_plane_z_offset = bone_length * (1/2 - slice_to_bone_ratio)
+    clipping_plane_z_offset = bone_length * (1 / 2 - slice_to_bone_ratio)
     if bone_end_idx == 0:
         clipping_plane_z_offset = -clipping_plane_z_offset
 
@@ -435,6 +437,10 @@ def visualize_points(plotter, points, color="blue"):
         plotter.add_mesh(pv.Sphere(3, point), color=color)
 
 
+def add_point(plotter, point, color="blue"):
+    return plotter.add_mesh(pv.Sphere(3, point), color=color)
+
+
 def visualize_slice(plotter, slice, color="red"):
     plotter.add_mesh(slice, color=color)
 
@@ -444,9 +450,55 @@ def add_yz_plane(plotter, mesh):
     plotter.add_mesh(plane, color="green", opacity=0.2)
 
 
+class RulerState(enum.Enum):
+    first_usage = 1
+    selecting_second = 2
+    start_new_measurement = 3
+
+
+class Ruler:
+    def __init__(self, plotter):
+        self.plotter = plotter
+        self.state = RulerState.first_usage
+        self.start_point_actor = None
+        self.end_point_actor = None
+        self.start_point_pos = None
+        self.end_point_pos = None
+        plotter.track_click_position(self.click_callback)
+
+    def click_callback(self, click_pos):
+        def add_point_at_click_pos():
+            return add_point(self.plotter, click_pos)
+
+        def save_first_point():
+            self.start_point_pos = click_pos
+            self.start_point_actor = add_point_at_click_pos()
+
+        if self.state == RulerState.first_usage:
+            save_first_point()
+            self.state = RulerState.selecting_second
+        elif self.state == RulerState.selecting_second:
+            self.end_point_pos = click_pos
+            self.end_point_actor = add_point_at_click_pos()
+            self.state = RulerState.start_new_measurement
+            print("Расстояние: {}мм".format(dist(self.start_point_pos, self.end_point_pos)))
+        elif self.state == RulerState.start_new_measurement:
+            self.plotter.remove_actor(self.start_point_actor)
+            self.plotter.remove_actor(self.end_point_actor)
+            save_first_point()
+            self.state = RulerState.selecting_second
+
+
+def enable_ruler(plotter, mesh):
+    Ruler(plotter)
+
+
 def set_up_and_run_plotter(mesh):
     plotter = pv.Plotter()
-    align_medial_side_to_y(plotter, mesh)
+    if not config.ruler_mode:
+        align_medial_side_to_y(plotter, mesh)
+    else:
+        enable_ruler(plotter, mesh)
     plotter.add_axes()
     plotter.add_mesh(mesh)
     plotter.show()

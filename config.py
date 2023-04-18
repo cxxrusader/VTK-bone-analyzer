@@ -3,6 +3,8 @@ slice_to_bone_ratio = 1/3
 path_to_true_params = "true_params.pkl"
 path_to_programmatically_measured_params = "prog_params.pkl"
 
+ruler_mode = True
+
 ends_colors = "yellow"
 
 upper_pit_point_name = "lowest point of the head"
